@@ -1,39 +1,38 @@
 "use client";
 
-import type {Product} from "~/product/types";
-
-import {useMemo, useState} from "react";
-import {SearchIcon, X, Table, StretchHorizontal, ChevronDown} from "lucide-react";
+import type { Product } from "~/product/types";
+import { useMemo, useState, useEffect } from "react";
+import { SearchIcon, X, Table, StretchHorizontal, ChevronDown } from "lucide-react";
 import Link from "next/link";
-import {useRouter} from "next/navigation";
-
-import {useCart} from "~/cart/context/client";
+import { useRouter } from "next/navigation";
+import { useCart } from "~/cart/context/client";
 import ProductCard from "~/product/components/ProductCard";
-
-import {cn} from "@/lib/utils";
-import {Input} from "@/components/ui/input";
-import {Toggle} from "@/components/ui/toggle";
+import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Toggle } from "@/components/ui/toggle";
 import CartItemDrawer from "@/modules/cart/components/CartItemDrawer";
 
-function StoreScreen({products, selected}: {products: Product[]; selected: null | Product}) {
-  const [, {addItem}] = useCart();
+function StoreScreen({ products, selected }: { products: Product[]; selected: null | Product }) {
+  const [, { addItem }] = useCart();
   const router = useRouter();
   const [query, setQuery] = useState<string>("");
   const [layout, setLayout] = useState<"list" | "grid">(() =>
     products.length > 30 ? "list" : "grid",
   );
   const [selectedCategory, setSelectedCategory] = useState<Product["category"] | null>(null);
+
+  // Agrupar y ordenar las categorías por cantidad de productos
   const categories = useMemo<[Product["category"], Product[]][]>(() => {
     let draft = products;
 
-    // Filter products by search query
+    // Filtrar productos por la consulta de búsqueda
     if (query) {
-      draft = draft.filter(({title, description}) =>
+      draft = draft.filter(({ title, description }) =>
         (title.toLowerCase() + description.toLowerCase()).includes(query.toLowerCase()),
       );
     }
 
-    // Group products by category
+    // Agrupar productos por categoría
     const groups = draft.reduce<Map<Product["category"], Product[]>>((map, product) => {
       if (!map.has(product.category)) {
         map.set(product.category, []);
@@ -44,16 +43,29 @@ function StoreScreen({products, selected}: {products: Product[]; selected: null 
       return map;
     }, new Map());
 
-    // Return them in a tuple of [category, products]
-    return Array.from(groups.entries());
+    // Convertir a un array y ordenar por cantidad de productos, de mayor a menor, y mover "Varios" al final
+    return Array.from(groups.entries())
+      .sort(([, productsA], [, productsB]) => productsB.length - productsA.length)
+      .sort(([categoryA], [categoryB]) => {
+        if (categoryA === "Varios") return 1;
+        if (categoryB === "Varios") return -1;
+        return 0;
+      });
   }, [query, products]);
+
+  // Establecer la primera categoría como seleccionada por defecto
+  useEffect(() => {
+    if (categories.length > 0) {
+      setSelectedCategory(categories[0][0]); // Selecciona la primera categoría por defecto
+    }
+  }, [categories]);
 
   function handleSelectCategory(category: Product["category"]) {
     setSelectedCategory((currentSelectedCategory) =>
       currentSelectedCategory === category ? null : category,
     );
 
-    // Scroll to the category
+    // Desplazarse a la categoría seleccionada
     queueMicrotask(() => {
       const categoryElement = document.getElementById(category)!;
       const filtersElement = document.getElementById("filters")!;
@@ -72,7 +84,7 @@ function StoreScreen({products, selected}: {products: Product[]; selected: null 
   return (
     <>
       <div className="flex flex-col">
-        {/* Filters */}
+        {/* Filtros */}
         <div
           className="sticky top-0 z-10 flex items-center justify-between gap-4 bg-background py-4"
           id="filters"
@@ -121,25 +133,31 @@ function StoreScreen({products, selected}: {products: Product[]; selected: null 
             </Toggle>
           </div>
         </div>
-        {/* Grid of products by category */}
+        {/* Grilla de productos por categoría */}
         <div className="flex flex-col">
           {categories.length ? (
-            categories.map(([category, categoryProducts]) => (
+            categories.map(([category, categoryProducts], index) => (
               <div key={category} className="flex flex-col gap-4 border-t py-4" id={category}>
                 <div
                   className={cn("flex items-center justify-between gap-4", {
-                    "cursor-pointer": layout === "list",
+                    "cursor-pointer": layout === "list", // Permite hacer clic solo en vista lista
                   })}
-                  onClick={() => {
-                    handleSelectCategory(category);
-                  }}
+                  onClick={() => handleSelectCategory(category)} // Toggle de expandir/contraer
                 >
                   <h2 className="text-xl font-medium sm:text-2xl">
                     {category} <span className="opacity-70">({categoryProducts.length})</span>
                   </h2>
-                  {layout === "list" && <ChevronDown className="h-6 w-6 opacity-40" />}
+                  {layout === "list" && (
+                    <ChevronDown
+                      className={cn("h-6 w-6 opacity-40", {
+                        "rotate-180": selectedCategory === category, // Mostrar flecha hacia abajo si está expandida
+                      })}
+                    />
+                  )}
                 </div>
-                {((layout === "list" && selectedCategory === category) || layout === "grid") && (
+
+                {/* Mostrar categorías seleccionadas y siempre mostrar el grid */}
+                {(selectedCategory === category || layout === "grid") && (
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {categoryProducts.length ? (
                       categoryProducts.map((product) => (
@@ -170,14 +188,15 @@ function StoreScreen({products, selected}: {products: Product[]; selected: null 
           )}
         </div>
       </div>
+
       {Boolean(selected) && (
         <CartItemDrawer
           open
-          item={{...selected!, quantity: 1}}
-          onClose={() => router.push("/", {scroll: false})}
+          item={{ ...selected!, quantity: 1 }}
+          onClose={() => router.push("/", { scroll: false })}
           onSubmit={(item) => {
             addItem(Date.now(), item);
-            router.push("/", {scroll: false});
+            router.push("/", { scroll: false });
           }}
         />
       )}
